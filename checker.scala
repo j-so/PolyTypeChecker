@@ -83,59 +83,124 @@ case class Checker(typeDefs: Set[TypeDef]) {
   //
   def replace( t:Type, tv2t:Map[TVar, Type] ): Type =
     t match {
-      case NumT | BoolT | UnitT => ??? // FILL ME IN
+      case NumT | BoolT | UnitT => t
 
-      case FunT(params, ret) => ??? // FILL ME IN
+      case FunT(params, ret) =>
+        FunT(params.map(a => replace(a, tv2t)), replace(ret, tv2t))
 
-      case RcdT(fields) => ??? // FILL ME IN
+      case RcdT(fields) =>
+        RcdT(fields.map(fe => (fe._1, replace(fe._2, tv2t))))
 
-      case TypT(name, typs) => ??? // FILL ME IN
+      case TypT(name, typs) =>
+        TypeT(name, typs.map(a => replace(a, tv2t)))
 
-      case tv:TVar => ??? // FILL ME IN
+      case tv:TVar => tv2t.getOrElse(tv, t)
 
-      case TFunT(tvars, funt) => ??? // FILL ME IN
+      case TFunT(tvars, funt) => replace(funt, tv2t ++ tvars.zip(funt.params).toMap)
     }
 
   // HINT - the bulk of this remains unchanged from the previous assignment.
   // Feel free to copy and paste code from your last submission into here.
   def getType( e:Exp, env:TypeEnv ): Type =
     e match {
-      case x:Var => ??? // FILL ME IN
+      case x:Var => env.getOrElse(x, throw Illtyped)
 
-      case _:Num => ??? // FILL ME IN
+      case _:Num => NumT
 
-      case _:Bool => ??? // FILL ME IN
+      case _:Bool => BoolT
 
-      case _:Unit => ??? // FILL ME IN
+      case _:Unit => NilT
 
-      case Plus | Minus | Times | Divide => ??? // FILL ME IN
+      case Plus | Minus | Times | Divide => FunT(Seq(NumT, NumT), NumT)
 
-      case LT | EQ => ??? // FILL ME IN
+      case LT | EQ => FunT(Seq(NumT, NumT), BoolT)
 
-      case And | Or => ??? // FILL ME IN
+      case And | Or => FunT(Seq(BoolT, BoolT), BoolT)
 
-      case Not => ??? // FILL ME IN
+      case Not => FunT(Seq(BoolT), BoolT)
 
-      case Fun(params, body) => ??? // FILL ME IN
+      case Fun(params, body) =>
+        FunT(params.map(s => s._2), getType(body, env ++ params.toMap))
 
-      case Call(fun, args) => ??? // FILL ME IN
+      case Call(fun, args) =>
+        getType(fun, env) match {
+          case FunT(params:Seq[Type], ret:Type) =>
+            if(params == args.map((e: Exp) => getType(e, env))) ret
+            else throw Illtyped
+          case _ => throw Illtyped
+        }
 
-      case If(e1, e2, e3) => ??? // FILL ME IN
+      case If(e1, e2, e3) =>
+        getType(e1, env) match {
+          case BoolT =>
+            if(getType(e2, env) == getType(e3, env)) getType(e3, env)
+            else throw Illtyped
+          case _ => throw Illtyped
+        }
 
-      case Let(x, e1, e2) => ??? // FILL ME IN
+      case Let(x, e1, e2) =>
+        getType(e2, env + (x -> getType(e1, env)))
 
-      case Rec(x, t1, e1, e2) => ??? // FILL ME IN
+      case Rec(x, t1, e1, e2) =>
+        t1 match {
+          case FunT(params, ret) =>
+            getType(e1, env + (x -> t1)) match {
+              case FunT(params1, ret1) =>
+                if (ret == ret1) getType(e1, env + (x -> t1))
+                else{
+                  ret1 match {
+                    case TypT(name) =>
+                      if(constructors(name).values.exists(_ == ret)) getType(e1, env + (x -> t1))
+                      else throw Illtyped
+                    case _ => throw Illtyped
+                  }
+                }
+              case _ =>
+                if (ret == getType(e1, env + (x -> t1)))
+                  getType(e2, env + (x -> t1))
+                else throw Illtyped
+            }
+          case _ =>
+            if(t1 == getType(e1, env + (x -> t1))) t1
+            else throw Illtyped
+        }
 
-      case Record(fields) => ??? // FILL ME IN
+      case Record(fields) =>
+        RcdT(fields.map(fe => (fe._1, getType(fe._2, env))))
 
-      case Access(e, field) => ??? // FILL ME IN
+      case Access(e, field) =>
+        getType(e, env) match {
+          case RcdT(fields) => fields.getOrElse(field, throw Illtyped)
+          case _ => throw Illtyped
+        }
 
-      case c @ Construct(name, constructor, typs, e) => ??? // FILL ME IN
+      case c @ Construct(name, constructor, typs, e) =>
+        if(constructorType(name, constructor, typs) == getType(e, env)) TypT(name, typs)
+        else throw Illtyped
 
-      case Match(e, cases) => ??? // FILL ME IN
+      case Match(e, cases) =>
+        if(cases.isEmpty) throw Illtyped
+        getType(e, env) match {
+          case a:TypT(name, typs) =>
+            if(cases.size != constructors(name).size) throw Illtyped
+            if(cases.map(c => c._1).distinct.size != cases.size) throw Illtyped
+            if(cases.map(c => getType(c._3, env + (c._2 -> constructorType(name, c._1, typs)))).distinct.size != 1) throw Illtyped
+            TypT(name)
+          case _ => throw Illtyped
+        }
 
-      case TAbs(tvars, fun) => ??? // FILL ME IN
+      case TAbs(tvars, fun) =>
+        getType(fun, env) match {
+          case f:FunT(params, body) =>
+            TFunT(tvars, f)
+          case _ => throw Illtyped
+        }
 
-      case TApp(e, typs) => ??? // FILL ME IN
+      case TApp(e, typs) =>
+        getType(e, env) match {
+          case f:TFunT(tvars, funt) =>
+            replace(f, Map())
+          case _ => throw Illtyped
+        }
     }
 }
