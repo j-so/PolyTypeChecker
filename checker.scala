@@ -92,11 +92,13 @@ case class Checker(typeDefs: Set[TypeDef]) {
         RcdT(fields.map(fe => (fe._1, replace(fe._2, tv2t))))
 
       case TypT(name, typs) =>
-        TypeT(name, typs.map(a => replace(a, tv2t)))
+        TypT(name, typs.map(a => replace(a, tv2t)))
 
-      case tv:TVar => tv2t.getOrElse(tv, t)
+      case tv:TVar => 
+        //System.out.println("tv2t contains: " + tv2t)
+        tv2t.getOrElse(tv, t)
 
-      case TFunT(tvars, funt) => replace(funt, tv2t ++ tvars.zip(funt.params).toMap)
+      case TFunT(tvars, funt) => replace(funt, tv2t)
     }
 
   // HINT - the bulk of this remains unchanged from the previous assignment.
@@ -109,7 +111,7 @@ case class Checker(typeDefs: Set[TypeDef]) {
 
       case _:Bool => BoolT
 
-      case _:Unit => NilT
+      case _:Unit => UnitT
 
       case Plus | Minus | Times | Divide => FunT(Seq(NumT, NumT), NumT)
 
@@ -126,7 +128,12 @@ case class Checker(typeDefs: Set[TypeDef]) {
         getType(fun, env) match {
           case FunT(params:Seq[Type], ret:Type) =>
             if(params == args.map((e: Exp) => getType(e, env))) ret
-            else throw Illtyped
+            else{
+
+              //System.out.println(params)
+              //System.out.println(args.map((e: Exp) => getType(e, env)))
+              throw Illtyped
+            } 
           case _ => throw Illtyped
         }
 
@@ -148,12 +155,7 @@ case class Checker(typeDefs: Set[TypeDef]) {
               case FunT(params1, ret1) =>
                 if (ret == ret1) getType(e1, env + (x -> t1))
                 else{
-                  ret1 match {
-                    case TypT(name) =>
-                      if(constructors(name).values.exists(_ == ret)) getType(e1, env + (x -> t1))
-                      else throw Illtyped
-                    case _ => throw Illtyped
-                  }
+                  throw Illtyped
                 }
               case _ =>
                 if (ret == getType(e1, env + (x -> t1)))
@@ -181,25 +183,26 @@ case class Checker(typeDefs: Set[TypeDef]) {
       case Match(e, cases) =>
         if(cases.isEmpty) throw Illtyped
         getType(e, env) match {
-          case a:TypT(name, typs) =>
+          case a @ TypT(name, typs) =>
             if(cases.size != constructors(name).size) throw Illtyped
             if(cases.map(c => c._1).distinct.size != cases.size) throw Illtyped
             if(cases.map(c => getType(c._3, env + (c._2 -> constructorType(name, c._1, typs)))).distinct.size != 1) throw Illtyped
-            TypT(name)
+            a
           case _ => throw Illtyped
         }
 
       case TAbs(tvars, fun) =>
         getType(fun, env) match {
-          case f:FunT(params, body) =>
+          case f @ FunT(params, body) =>
             TFunT(tvars, f)
           case _ => throw Illtyped
         }
 
       case TApp(e, typs) =>
         getType(e, env) match {
-          case f:TFunT(tvars, funt) =>
-            replace(f, Map())
+          case f @ TFunT(tvars, funt) =>
+            //System.out.println(replace(f, Map()))
+            replace(f, f.tvars.zip(typs).toMap)
           case _ => throw Illtyped
         }
     }
